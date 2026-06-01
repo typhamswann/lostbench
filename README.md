@@ -74,36 +74,41 @@ surfaced to the agent.
 
 ## How the worlds were built
 
-Each task lives inside a "world": a navigable graph of real street view
-panoramas tied to a real city block.
+Each task lives inside a **world**: a navigable graph of real Mapillary
+panoramas tied to a real city block, anchored to OpenStreetMap road
+geometry. Building these worlds well is most of the work behind the
+benchmark, and the design has a few load-bearing properties:
 
-1. **Pano discovery** &mdash; iterate over Mapillary's public spherical-pano
-   tile layer (z14 image index, z8 sequence index) inside a candidate city
-   bbox until ≥ 70 % road coverage is reached.
-2. **Road graph** &mdash; pull OpenStreetMap ways (highway tags
-   `primary | secondary | residential | tertiary | service | living_street
-   | pedestrian | path | unclassified`) inside the bbox, padded by 1.5 km
-   to capture neighbors crossing the boundary.
-3. **Skeleton + edges** &mdash; sample waypoints along each polyline at 8 m
-   spacing, snap each Mapillary pano to its nearest waypoint within 12 m,
-   and stitch edges between adjacent skeleton points and across
-   intersections. Each waypoint stores the actual Mapillary `image_id` so
-   the runner can fetch real pano bytes at inference time.
-4. **Compass** &mdash; use Mapillary's SfM-corrected `computed_compass_angle`
-   to set the heading of each waypoint. Fall back to OSM road bearing
-   when SfM is missing.
-5. **Task sampling** &mdash; for each city, sample (start, goal) waypoint
-   pairs that satisfy a target straight-line distance band (easy / medium /
-   hard) AND a minimum BFS hop count. The 60-task release is then drawn
-   from this candidate pool subject to: ≤ 2 tasks per city, ≤ 25 % of
-   tasks in any 4 × 4 US-bbox lat-lng cell, deterministic selection from
-   a fixed seed.
+- **Real photos, not renders.** Panoramas come straight from
+  [Mapillary](https://www.mapillary.com)'s public spherical-image archive.
+  Models contend with the long tail of the real world &mdash; weather, motion
+  blur, occlusions, foreign-language signage, construction &mdash; that
+  synthetic environments smooth over.
+- **Road-aligned graph, not point-cloud noise.** The walkable graph is
+  derived from OpenStreetMap so navigation respects the same topology a
+  human walker would. Panos are snapped onto that graph, not the other
+  way around &mdash; the agent can't wander off the road into someone's
+  backyard.
+- **Geographic diversity by construction.** The 60-task release spans
+  **51 unique cities** across the contiguous US (lat **25.6° → 47.6°**,
+  lng **−122.2° → −72.3°**), with hard caps on tasks-per-city and on the
+  share of tasks in any one US region. No city gets to dominate the
+  signal.
+- **Difficulty stratification.** Tasks are sampled to satisfy target
+  straight-line distance bands and minimum hop counts in the road graph,
+  then partitioned into 20 easy / 20 medium / 20 hard. Difficulty is
+  about how many decisions the agent has to get right, not just how
+  far the goal is.
+- **Deterministic + reproducible.** The 60-task slice is the output of a
+  fixed-seed selection from a much larger candidate pool. The selection
+  manifest is checked in at [`scripts/selection_summary.json`](scripts/selection_summary.json)
+  so anyone can audit the geographic / difficulty distribution.
 
-The result is 60 tasks across **51 unique US cities**, spanning lat
-**25.6 ° → 47.6 °** and lng **−122.2 ° → −72.3 °** &mdash; coast to coast.
-
-Single-task schema: [`docs/format.md`](docs/format.md).
-World-graph schema: same file, second half.
+The full task and world-graph schemas are documented in
+[`docs/format.md`](docs/format.md). The exact corpus-construction
+pipeline (pano discovery thresholds, graph-skeleton parameters, candidate
+sampling logic) is not part of the public benchmark &mdash; it lives with the
+training corpus available on request (see [Full RL environment](#full-rl-environment)).
 
 ---
 
