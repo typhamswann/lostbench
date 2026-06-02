@@ -16,40 +16,36 @@ task format:
 ```text
 task.toml         Metadata: start pano, goal lat/lng, optimal path, resource limits
 instruction.md    The prompt the agent sees
-source.json       The underlying wanderbench task definition
-environment/      Dockerfile that builds the agent sandbox (FROM wanderbench-runtime:1.0)
+source.json       The underlying wanderbench task definition (read by the verifier)
+environment/      Dockerfile that builds the agent sandbox
 tests/            Verifier: test.sh writes path_progress in [0, 1] to /logs/verifier/reward.txt
 ```
 
-The shared base image `wanderbench-runtime:1.0` is built once from
-[`harbor/Dockerfile`](harbor/Dockerfile):
-
-```bash
-docker build -t wanderbench-runtime:1.0 harbor/
-```
-
-The image pre-sets `WANDERBENCH_PANOS_PUBLIC_URL` so panos are fetched
-lazily from a public R2 bucket — no credentials required.
+Panos are fetched lazily over HTTPS from a public R2 bucket
+(`WANDERBENCH_PANOS_PUBLIC_URL`, preset in every task's Dockerfile). World
+graphs are mounted from `world_graphs/` at `/graphs`. No credentials
+required to run anything in this repo.
 
 ## Quickstart
 
-Use [Pier](https://github.com/datacurve-ai/pier) to run the benchmark:
+Run the benchmark under any [Harbor](https://www.harborframework.com/)-compatible
+runtime:
 
 ```bash
 git clone https://github.com/typhamswann/wanderbench-benchmark
-docker build -t wanderbench-runtime:1.0 wanderbench-benchmark/harbor
-
-uv tool install datacurve-pier
-pier run -p wanderbench-benchmark/tasks --agent <agent> --model <model>
+harbor run -p wanderbench-benchmark/tasks --agent <agent> --model <model>
 ```
 
-Pier mounts each task's directory into a container, drives the agent, and
-runs `tests/test.sh` to collect the reward. World graphs at
-`wanderbench-benchmark/world_graphs/` are mounted at `/graphs`.
+Harbor builds each task's sandbox from `environment/Dockerfile`, drives the
+agent, runs `tests/test.sh`, and writes the per-task reward to
+`/logs/verifier/reward.txt`. The verifier emits `path_progress ∈ [0, 1]`;
+Harbor collates the per-task rewards into a leaderboard-style summary.
 
-To run without Pier — for local debugging or one-off evals — use the
-standalone `wb` CLI from
-[wanderbench-env](https://github.com/typhamswann/wanderbench-env):
+Any Harbor-compatible runner works (e.g.
+[Pier](https://github.com/datacurve-ai/pier) for sandboxed CLI agents).
+For local debugging or running outside Harbor entirely, the standalone
+`wb` CLI from [wanderbench-env](https://github.com/typhamswann/wanderbench-env)
+reads the same `tasks/` tree directly:
 
 ```bash
 uv tool install git+https://github.com/typhamswann/wanderbench-env
@@ -58,27 +54,25 @@ wb run -p wanderbench-benchmark/tasks --model anthropic/claude-opus-4-7 --out ev
 
 ### Modes
 
-Two evaluation modes:
-
 | mode | compass | self-pin on map | best for |
 |---|---|---|---|
 | **assisted** *(default)* | shown | shown | What a human gets in Street View; leaderboard standard. |
-| **strict** | hidden | hidden | Pure visual navigation. Stresses heading-from-imagery grounding. |
+| **strict** | hidden | hidden | Pure visual navigation; stresses heading-from-imagery grounding. |
 
 Pass `--strict` to `wb run` for the harder variant.
 
 ### Subsets and single tasks
 
 ```bash
-pier run -p wanderbench-benchmark/tasks --agent <agent> --n-tasks 10
-pier run -p wanderbench-benchmark/tasks/<task-id> --agent <agent>
+harbor run -p wanderbench-benchmark/tasks --agent <agent> --n-tasks 10
+harbor run -p wanderbench-benchmark/tasks/<task-id> --agent <agent>
 ```
 
 ## What the agent does
 
-On every turn the model sees a 1024 × 768 viewport rendered from the
-current pano plus a small HUD (current pano id, last action, distance to
-goal). It calls one of six tools:
+Every turn the model sees a 1024 × 768 viewport from the current
+panorama plus a HUD line (pano id, last action, distance to goal). It
+calls one of six tools:
 
 | tool | effect |
 | --- | --- |
@@ -162,7 +156,3 @@ Available under separate terms; includes:
 - Hardened rollout infrastructure, validated across multimodal LLM stacks.
 
 For access, contact **phamswannty@gmail.com**.
-
-## License
-
-MIT — see [`LICENSE`](LICENSE).

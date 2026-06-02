@@ -1,15 +1,12 @@
-# Per-task layer for wanderbench/cand_0465_national_medium_01.
-#
-# Inherits the shared runtime built from harbor/Dockerfile at the repo root.
-# All deps and the `wb` CLI are already installed there; this layer just
-# carries the task definition and sets the entrypoint.
-FROM wanderbench-runtime:1.0
+FROM python:3.11-slim
 
-COPY task.toml /task/task.toml
-COPY source.json /task/source.json
-COPY instruction.md /task/instruction.md
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl ca-certificates && rm -rf /var/lib/apt/lists/*
 
+RUN pip install --no-cache-dir \
+    "wanderbench-env @ git+https://github.com/typhamswann/wanderbench-env"
+
+ENV WANDERBENCH_PANOS_PUBLIC_URL=https://pub-b410c3932f6242a08d9d3f2d6ed556a8.r2.dev
+ENV WANDERBENCH_GRAPHS_DIR=/graphs
 WORKDIR /workspace
-# Boot the sim on container start; Harbor expects /workspace to be populated
-# (view.jpg, state.json) before the agent's first action.
-CMD ["wb", "harbor-init", "/task"]
+

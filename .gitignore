@@ -1,13 +1,5 @@
+.DS_Store
 __pycache__/
 *.pyc
-*.pyo
-.DS_Store
 .venv/
-venv/
-dist/
-build/
-*.egg-info/
-.env
-.env.local
-.pytest_cache/
-.ruff_cache/
+eval_out/
