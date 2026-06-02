@@ -1,0 +1,47 @@
+schema_version = "1.1"
+artifacts = []
+
+[task]
+name = "wanderbench/cand_0234_national_hard_01"
+description = "Walk from pano w1075267635_i5 to the goal coordinate within 25 m. Difficulty: hard. Optimal walkable distance: 511 m."
+authors = ["Ty Pham-Swann"]
+keywords = ["navigation", "multimodal", "vlm", "wanderbench"]
+
+[metadata]
+ext_id = "wanderbench-cand_0234_national_hard_01"
+task_id = "cand_0234_national_hard_01"
+display_title = "Navigate to (29.90989, -95.58714) in cand_0234_national"
+display_description = "Walk from pano w1075267635_i5 to the goal coordinate within 25 m. Difficulty: hard. Optimal walkable distance: 511 m."
+category = "navigation"
+language = "english"
+repository_url = "https://github.com/typhamswann/wanderbench-benchmark"
+base_commit_hash = ""
+# Path is relative to the task directory; harbor-init reads it.
+wanderbench_task_path = "source.json"
+difficulty = "hard"
+city = "cand_0234_national"
+
+[verifier]
+timeout_sec = 600.0
+
+[verifier.env]
+
+[agent]
+timeout_sec = 1800.0
+
+[environment]
+build_timeout_sec = 1800.0
+docker_image = "wanderbench-runtime:1.0"
+os = "linux"
+cpus = 2
+memory_mb = 4096
+storage_mb = 4096
+gpus = 0
+allow_internet = true
+mcp_servers = []
+
+[environment.env]
+
+[solution]
+
+[solution.env]

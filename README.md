@@ -17,17 +17,33 @@ human-verified · path-distance reward in [0, 1]</sub>
 
 ## Quickstart
 
+The benchmark ships in the Harbor / Pier task format: one directory per
+task with a `task.toml`, an instruction, a sandbox `Dockerfile`, and a
+`tests/test.sh` verifier. Run the whole suite under Pier:
+
 ```bash
 git clone https://github.com/typhamswann/wanderbench-benchmark
+pier run -p wanderbench-benchmark/tasks --agent <agent> --model <model>
+```
+
+Each task is one container. The image fetches panos lazily over HTTPS from
+the public R2 bucket; no credentials required. World graphs are mounted
+from `world_graphs/`. The verifier writes a single `path_progress` float
+in `[0, 1]` to `/logs/verifier/reward.txt`; Pier collates the per-task
+rewards into a leaderboard-style summary.
+
+To run without Pier — for local debugging or one-off evals — use the
+standalone `wb` CLI from
+[wanderbench-env](https://github.com/typhamswann/wanderbench-env):
+
+```bash
 uv tool install git+https://github.com/typhamswann/wanderbench-env
 wb run -p wanderbench-benchmark/tasks --model anthropic/claude-opus-4-7 --out eval_out/
 ```
 
-`wb run` is the standalone CLI shipped by
-[wanderbench-env](https://github.com/typhamswann/wanderbench-env). It reads
-the `tasks/` tree, drives the model through each task, scores it with
-`path_progress`, and writes a JSON results file plus a leaderboard-style
-summary. Full reproduction recipe: [`docs/reproduce.md`](docs/reproduce.md).
+`wb run` reads the same `tasks/` tree, drives the model in-process, and
+writes a JSON results file plus a per-difficulty summary. Full
+reproduction recipe: [`docs/reproduce.md`](docs/reproduce.md).
 
 ---
 
@@ -69,6 +85,32 @@ wb run -p wanderbench-benchmark/tasks --model <name> --strict # strict, no compa
 
 Both modes use the same scoring; they differ only in the observations
 surfaced to the agent.
+
+---
+
+## Data
+
+Everything needed to score a model lives in the repository plus one
+public R2 bucket:
+
+- **Tasks** — 60 self-contained per-task directories under `tasks/<task_id>/`
+  (`task.toml`, `instruction.md`, `source.json`, `environment/Dockerfile`,
+  `tests/test.sh`). Total: ~9 MB.
+- **World graphs** — 51 JSONL files at `world_graphs/<city>.jsonl`,
+  pano nodes + edges + camera metadata. Total: ~9 MB.
+- **Panoramas** — served lazily from the public bucket:
+  ```
+  https://pub-b410c3932f6242a08d9d3f2d6ed556a8.r2.dev/panos/{id%100:02d}/{id}.jpg
+  ```
+  ~57 GB across the whole corpus; each rollout pulls only the panos it
+  actually visits (a few hundred kB per turn). No credentials required.
+
+The shared `harbor/Dockerfile` sets
+`WANDERBENCH_PANOS_PUBLIC_URL=https://pub-b410c3932f6242a08d9d3f2d6ed556a8.r2.dev`
+and `WANDERBENCH_GRAPHS_DIR=/graphs` by default — Pier mounts
+`world_graphs/` at `/graphs`, and rendering Just Works. Override either
+env var to point at a local mirror if you'd rather not hit the network on
+every rollout.
 
 ---
 
@@ -200,13 +242,23 @@ wanderbench-benchmark/
 ├── LICENSE                     ← MIT
 ├── CITATION.cff
 ├── canary.txt                  ← contamination canary (see below)
-├── tasks/                      ← 60 self-contained JSON tasks
-│   ├── easy/   (20)
-│   ├── medium/ (20)
-│   └── hard/   (20)
+├── dataset.toml                ← Harbor dataset manifest (name, version, metrics)
+├── harbor/
+│   └── Dockerfile              ← shared base image: wanderbench-runtime:1.0
+├── tasks/                      ← 60 self-contained task directories
+│   └── <task_id>/
+│       ├── task.toml           ← Harbor task spec (schema_version=1.1)
+│       ├── instruction.md      ← agent-facing prompt
+│       ├── source.json         ← canonical wanderbench task definition
+│       ├── environment/
+│       │   └── Dockerfile      ← FROM wanderbench-runtime:1.0
+│       └── tests/
+│           └── test.sh         ← verifier; writes /logs/verifier/reward.txt
 ├── world_graphs/               ← 51 city graphs (JSONL, pano nodes + edges)
 ├── scripts/
 │   ├── build_tasks.py          ← deterministic stratified selection from the corpus
+│   ├── gen_harbor_tasks.py     ← (re-)emit Harbor per-task dirs from a flat source
+│   ├── test_harbor_task.sh     ← Docker smoke-test for one task end-to-end
 │   ├── verify.py               ← schema + reachability check
 │   └── selection_summary.json  ← provenance of this 60-task release
 └── docs/
