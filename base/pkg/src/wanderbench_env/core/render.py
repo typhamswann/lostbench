@@ -316,8 +316,10 @@ def _draw_cursor(img: Image.Image, x: int, y: int) -> None:
 
 def _draw_hud(img: Image.Image, sim: WorldSim) -> None:
     draw = ImageDraw.Draw(img, "RGBA")
+    turn_str = (f"turn {sim.turn_count}/{sim.max_turns} ({sim.turns_remaining} left)"
+                if getattr(sim, "max_turns", None) else f"turn {sim.turn_count}")
     text = (
-        f"turn {sim.turn_count}  steps {sim.steps_taken}  "
+        f"{turn_str}  steps {sim.steps_taken}  "
         f"view={sim.view_mode}  mouse={'DOWN' if sim.mouse_is_down else 'up'}"
     )
     font = _font(16)

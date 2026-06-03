@@ -34,7 +34,7 @@ import verifiers as vf
 from datasets import Dataset
 
 from .core.prompt import build_system_prompt
-from .core.sim import VIEW_H, VIEW_W, WorldSim
+from .core.sim import VIEW_H, VIEW_W, WorldSim, normalize_max_turns
 from .core.tasks import Task as WBTask, load_tasks
 from .core.world import haversine_m
 from .core.path_dist import path_distance_to_goal_m
@@ -408,7 +408,7 @@ class WanderbenchEnv(vf.MultiTurnEnv):
         map_show_self: bool = True,
         image_format: Literal["jpeg", "png"] = "jpeg",
         image_history_window: int = 4,
-        max_turns: int = 200,
+        max_turns: int = 10**9,
         **kwargs,
     ):
         super().__init__(max_turns=max_turns, **kwargs)
@@ -441,6 +441,7 @@ class WanderbenchEnv(vf.MultiTurnEnv):
             panos_dir=_resolve_panos_dir(),
             show_compass=self.show_compass,
             map_show_self=self.map_show_self,
+            max_turns=normalize_max_turns(self.max_turns),
             _graphs_dir=_resolve_graphs_dir(),
         )
         initial_dist = haversine_m(
@@ -544,8 +545,12 @@ class WanderbenchEnv(vf.MultiTurnEnv):
         state["final_path_dist_to_goal_m"] = _final_path_dist(sim)
 
         data_url = _image_data_url(frame.image, self.image_format)
+        turn_str = (
+            f"turn {sim.turn_count}/{sim.max_turns} ({sim.turns_remaining} left)"
+            if getattr(sim, "max_turns", None) else f"turn {sim.turn_count}"
+        )
         hud = (
-            f"turn {sim.turn_count}  steps {sim.steps_taken}  "
+            f"{turn_str}  steps {sim.steps_taken}  "
             f"view={sim.view_mode}  pano={sim.current_pano_id}  "
             f"dist_to_goal={state['dist_to_goal']:.1f}m  "
             f"last={sim.last_action}({'ok' if sim.last_action_was_valid else 'noop'})"
@@ -614,7 +619,7 @@ def load_environment(
     difficulty: str | None = None,
     max_tasks: int | None = None,
     tasks_path: str | Path | None = None,
-    max_turns: int = 200,
+    max_turns: int = 10**9,
     show_compass: bool = True,
     map_show_self: bool = True,
     image_format: Literal["jpeg", "png"] = "jpeg",
@@ -631,6 +636,7 @@ def load_environment(
     system_prompt = build_system_prompt(
         show_compass=show_compass,
         map_show_self=map_show_self,
+        max_turns=normalize_max_turns(max_turns),
     )
     rows = _build_rows(
         split=split,

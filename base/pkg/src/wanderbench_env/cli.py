@@ -360,14 +360,17 @@ def _resolve_source_task(task_dir: Path, toml_meta: dict) -> tuple[Path, dict]:
     )
 
 
-def _build_sim_from_source(source: dict):
+def _build_sim_from_source(source: dict, max_turns: int | None = None):
     """Construct a WorldSim from a wanderbench-bench source dict.
 
     Resolves the world graph against WANDERBENCH_GRAPHS_DIR (the harbor
     image defaults this to /graphs); the panos come from
     WANDERBENCH_PANOS_PUBLIC_URL (lazy fetch in render._ensure_pano).
+
+    ``max_turns`` (if a real finite budget) is stamped onto the sim so the
+    HUD / state.json surface "turn N/max (K left)" each step. None = no budget.
     """
-    from wanderbench_env.core.sim import WorldSim
+    from wanderbench_env.core.sim import WorldSim, normalize_max_turns
     from wanderbench_env.core.runtime import _resolve_graphs_dir, _resolve_panos_dir
 
     wb_task = _bench_dict_to_wbtask(source)
@@ -381,6 +384,7 @@ def _build_sim_from_source(source: dict):
         panos_dir=_resolve_panos_dir(),
         show_compass=True,
         map_show_self=True,
+        max_turns=normalize_max_turns(max_turns),
         _graphs_dir=_resolve_graphs_dir(),
     )
 
@@ -402,6 +406,8 @@ def _snapshot_sim(sim) -> dict:
         "cursor": [int(sim.cursor_x), int(sim.cursor_y)],
         "mouse_is_down": bool(sim.mouse_is_down),
         "turn_count": int(sim.turn_count),
+        "max_turns": (int(sim.max_turns) if getattr(sim, "max_turns", None) else None),
+        "turns_remaining": sim.turns_remaining,
         "steps_taken": int(sim.steps_taken),
         "visited_panos": list(sim.visited_panos),
         "last_action": sim.last_action,
@@ -452,8 +458,12 @@ def _restore_sim() -> tuple[Any, Path]:
 
 
 def _hud_line(sim) -> str:
+    turn_str = (
+        f"turn={sim.turn_count}/{sim.max_turns} remaining={sim.turns_remaining}"
+        if getattr(sim, "max_turns", None) else f"turn={sim.turn_count}"
+    )
     return (
-        f"turn={sim.turn_count} pano={sim.current_pano_id} "
+        f"{turn_str} pano={sim.current_pano_id} "
         f"view={sim.view_mode} yaw={sim.heading_deg:.1f}° "
         f"dist_to_goal={sim.distance_to_goal_m():.1f}m "
         f"last={sim.last_action}({'ok' if sim.last_action_was_valid else 'bad'}) "
@@ -461,12 +471,28 @@ def _hud_line(sim) -> str:
     )
 
 
+def _resolve_max_turns(args: argparse.Namespace) -> int | None:
+    """Turn budget for a Harbor task. Precedence: --max-turns flag >
+    WANDERBENCH_MAX_TURNS env var (set by the task Dockerfile/harness) >
+    None (unbounded — no budget surfaced)."""
+    mt = getattr(args, "max_turns", None)
+    if mt is None:
+        env_mt = os.environ.get("WANDERBENCH_MAX_TURNS")
+        if env_mt:
+            try:
+                mt = int(env_mt)
+            except ValueError:
+                print(f"[wb] ignoring non-int WANDERBENCH_MAX_TURNS={env_mt!r}",
+                      file=sys.stderr)
+    return mt
+
+
 def _cmd_harbor_init(args: argparse.Namespace) -> int:
     task_dir = Path(args.task_dir).resolve()
     toml = _load_toml(task_dir / "task.toml")
     meta = toml.get("metadata", {})
     src_path, source = _resolve_source_task(task_dir, meta)
-    sim = _build_sim_from_source(source)
+    sim = _build_sim_from_source(source, max_turns=_resolve_max_turns(args))
     _save_sim(sim, task_dir)
     # Reset rollout log + remove any stale terminal artifacts.
     rollout = WORKSPACE / "rollout.jsonl"
@@ -593,9 +619,18 @@ def _cmd_help(args: argparse.Namespace) -> int:
     to drive wanderbench. Mirrors what chat-mode agents see as their
     system prompt — single source of truth in core/prompt.py."""
     from .core.prompt import build_system_prompt
+    from .core.sim import normalize_max_turns
+    env_mt = os.environ.get("WANDERBENCH_MAX_TURNS")
+    max_turns = None
+    if env_mt:
+        try:
+            max_turns = int(env_mt)
+        except ValueError:
+            max_turns = None
     text = build_system_prompt(
         show_compass=not args.strict,
         map_show_self=not args.strict,
+        max_turns=normalize_max_turns(max_turns),
     )
     print(text)
     print()
@@ -682,6 +717,11 @@ def main(argv: list[str] | None = None) -> int:
         help="boot a wanderbench task in /workspace (Harbor entrypoint)",
     )
     ph_init.add_argument("task_dir", help="path to a Harbor task directory")
+    ph_init.add_argument(
+        "--max-turns", type=int, default=None,
+        help="turn budget surfaced to the agent (HUD shows 'turn N/max'). "
+             "Defaults to the WANDERBENCH_MAX_TURNS env var, else unbounded.",
+    )
     ph_init.set_defaults(func=_cmd_harbor_init)
 
     ph_step = sub.add_parser(

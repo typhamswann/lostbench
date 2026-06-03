@@ -23,6 +23,24 @@ from .world import (
 )
 
 
+# A max_turns at or above this is treated as "effectively unbounded": no turn
+# budget is surfaced to the agent. Lets callers pass a giant sentinel (e.g.
+# 10**9 — the CLI's "no limit" default) without the HUD reading "turn 3/10^9".
+UNBOUNDED_TURNS = 100_000
+
+
+def normalize_max_turns(max_turns: int | None) -> int | None:
+    """Return a real finite turn budget, or None if effectively unbounded.
+
+    None / 0 / negative / absurdly-large sentinels all collapse to None, which
+    every downstream consumer (sim.turns_remaining, the HUD, build_system_prompt)
+    reads as "no budget — show nothing".
+    """
+    if not max_turns or int(max_turns) <= 0 or int(max_turns) >= UNBOUNDED_TURNS:
+        return None
+    return int(max_turns)
+
+
 VIEW_W = 1024
 VIEW_H = 768
 DEFAULT_FOV = 80.0
@@ -77,6 +95,9 @@ class WorldSim:
     map_center_lng: float = 0.0
     show_compass: bool = False
     map_show_self: bool = False
+    # Turn budget surfaced to the agent (HUD shows "turn N/max · K left").
+    # None = unbounded (no budget shown). Set by the harness/env at episode start.
+    max_turns: int | None = None
     _graph: WorldGraph | None = None
     # Override path to the world_graphs directory; resolved relative to here
     # for graphs referenced by Task.world_graph_path. If None, falls back to the
@@ -135,6 +156,13 @@ class WorldSim:
             return self.current_pano_id
         node = self._graph.get(self.current_pano_id)
         return node.image_id or node.pano_id
+
+    @property
+    def turns_remaining(self) -> int | None:
+        """Turns left before the budget runs out, or None if unbounded."""
+        if not self.max_turns:
+            return None
+        return max(0, int(self.max_turns) - int(self.turn_count))
 
     @property
     def heading_deg(self) -> float:
