@@ -1,16 +1,11 @@
-FROM python:3.11-slim
+FROM wanderbench-base:1.0
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git curl ca-certificates && rm -rf /var/lib/apt/lists/*
-
-RUN pip install --no-cache-dir \
-    "wanderbench-env @ git+https://github.com/typhamswann/wanderbench-env"
-
-ENV WANDERBENCH_PANOS_PUBLIC_URL=https://pub-b410c3932f6242a08d9d3f2d6ed556a8.r2.dev
+# Bake this task's world graph into the image (no /graphs mount needed).
 ENV WANDERBENCH_GRAPHS_DIR=/graphs
+COPY world_graph.jsonl /graphs/cand_0234_national.jsonl
 
-# Build context is the task root. Bake the task definition into the image
-# so the container is the task state — agents never run `wb harbor-init`.
+# The task definition. The container IS the task state — ENTRYPOINT inits the
+# sim on boot so agents never run `wb harbor-init`.
 COPY task.toml source.json /task/
 
 WORKDIR /workspace
