@@ -48,7 +48,7 @@ def build_system_prompt(
 
     return f"""You are navigating a real city using mouse controls.
 
-Goal: travel from the starting point to the goal, then declare arrival with submit_guess. You get ONE submit_guess attempt. Your goal is to be as close as possible to the true goal when you submit.{budget_line}
+Goal: travel from the starting point to the goal, then declare arrival with submit_guess. You get ONE submit_guess attempt. You are scored by the great-circle (haversine) distance from your final position to the goal: `pp = clip(1 - final_dist_m / initial_dist_m, 0, 1)`. The per-turn HUD shows `dist_to_goal` in the same metric you'll be scored on — minimize it.{budget_line}
 
 You see only images. There are two views:
 1. PANO VIEW — a 360 street-view panorama at your current location. You see what's around you.

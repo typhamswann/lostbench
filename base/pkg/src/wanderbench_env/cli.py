@@ -556,15 +556,23 @@ def _cmd_harbor_step(args: argparse.Namespace) -> int:
 
 def _cmd_harbor_score(args: argparse.Namespace) -> int:
     sim, _task_dir = _restore_sim()
-    # Compute final path-distance to goal using the same logic as the
-    # online env (Dijkstra over the world graph + last-mile haversine to
-    # the exact goal coord).
+    # v0.4: scoring is now haversine-based (start->goal great-circle distance
+    # closed). Dijkstra walking-distance over the road graph is still computed
+    # below for the diagnostic payload, but no longer determines the score.
     from wanderbench_env.core.path_dist import path_distance_to_goal_m
     from wanderbench_env.core.runtime import path_progress
     from wanderbench_env.core.world import haversine_m
 
-    initial = float(sim.task.optimal_distance_m or 0.0)
-    final = path_distance_to_goal_m(
+    # Haversine: scoring metric (numerator + denominator).
+    final_lat, final_lng = sim.current_lat_lng
+    final_hav = haversine_m(final_lat, final_lng,
+                            sim.task.goal_lat, sim.task.goal_lng)
+    initial_hav = haversine_m(sim.task.start_lat, sim.task.start_lng,
+                              sim.task.goal_lat, sim.task.goal_lng)
+
+    # Dijkstra: kept in the payload for transparency / debugging only.
+    initial_road = float(sim.task.optimal_distance_m or 0.0)
+    final_road = path_distance_to_goal_m(
         sim._graph,
         sim.current_pano_id,
         sim.task.goal_lat,
@@ -572,18 +580,14 @@ def _cmd_harbor_score(args: argparse.Namespace) -> int:
     ) if sim._graph is not None else None
 
     state = {
-        "initial_path_dist_m": initial,
-        "final_path_dist_to_goal_m": final,
+        "initial_dist": initial_hav,
+        "dist_to_goal": final_hav,
     }
-    fake_task = {"info": {"wb_task": {"optimal_distance_m": initial}}}
-    pp = float(path_progress(fake_task, state))
-    final_lat, final_lng = sim.current_lat_lng
-    hav = haversine_m(final_lat, final_lng,
-                      sim.task.goal_lat, sim.task.goal_lng)
+    pp = float(path_progress({}, state))
     payload = {
         "task_id": sim.task.task_id,
         "path_progress": pp,
-        "reached_within_25m": bool(hav <= float(sim.task.goal_radius_m)),
+        "reached_within_25m": bool(final_hav <= float(sim.task.goal_radius_m)),
         "turns_taken": int(sim.turn_count),
         "steps_taken": int(sim.steps_taken),
         "guess_submitted": bool(sim.guess_submitted),
@@ -591,10 +595,12 @@ def _cmd_harbor_score(args: argparse.Namespace) -> int:
         "final_pano_id": sim.current_pano_id,
         "final_lat": final_lat,
         "final_lng": final_lng,
-        "final_haversine_m": round(float(hav), 2),
-        "initial_path_dist_m": round(initial, 2),
+        "initial_haversine_m": round(float(initial_hav), 2),
+        "final_haversine_m": round(float(final_hav), 2),
+        # Dijkstra metrics retained for diagnostics; not used in scoring.
+        "initial_path_dist_m": round(initial_road, 2),
         "final_path_dist_to_goal_m": (
-            round(float(final), 2) if final is not None else None
+            round(float(final_road), 2) if final_road is not None else None
         ),
     }
     agent_dir = LOGS_DIR / "agent"

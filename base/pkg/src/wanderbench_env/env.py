@@ -206,28 +206,43 @@ def _final_path_dist(sim) -> float:
 def path_progress(task, state) -> float:
     """Single-term terminal reward in [0, 1].
 
-    Measures the fraction of the optimal walkable path the agent has closed.
-    Uses Dijkstra through the world graph (edges weighted by haversine
-    between adjacent pano camera positions) plus a last-mile haversine from
-    the goal-nearest waypoint to the exact goal coordinate — i.e. mirrors how
-    ``task.optimal_distance_m`` was computed at bake time.
+    Fraction of the start->goal great-circle distance the agent has closed::
 
-    ``state["final_path_dist_to_goal_m"]`` is set by the harness when the
-    rollout terminates (sim.done, max_turns reached, or
-    consec_model_errors cap). The reward is::
+        pp = clip(1 - final_haversine_m / initial_haversine_m, 0, 1)
 
-        clip(1 - final_path_dist_to_goal_m / optimal_distance_m, 0, 1)
+    where ``final_haversine_m`` is the haversine from the agent's final
+    pano coordinate to the goal coordinate, and ``initial_haversine_m`` is
+    the start-to-goal haversine.
+
+    Rationale for haversine over Dijkstra-walking-distance (changed in v0.4):
+      - Matches what the agent sees: the per-turn HUD already shows
+        ``dist_to_goal_m`` as haversine, so the scoring metric now agrees
+        with the observation the agent is optimizing against.
+      - Eliminates "scoring cliffs" where an agent lands geographically
+        adjacent to the goal on a road that's disconnected from the goal
+        road in the OSM graph. Under the prior Dijkstra rubric, three
+        documented cases (cand_0667 / cand_0308 in the v0.3 leaderboard)
+        scored 0 despite the agent submitting <25 m from goal.
+
+    The agent still cannot teleport: the graph constraint is enforced by
+    ``WorldSim.step()`` at action time, not by the scorer. The scorer only
+    measures where the agent ended up.
 
     Boundaries:
-      - agent at goal-nearest waypoint  -> 1.0
-      - agent stuck at start            -> 0.0
-      - agent ended farther than start  -> 0.0 (clipped)
-      - disconnected graph component    -> 0.0 (inf / x → -inf → clipped to 0)
+      - agent at goal coordinate       -> 1.0
+      - agent stuck at start           -> 0.0
+      - agent ended farther than start -> 0.0 (clipped)
     """
-    initial = state.get("initial_path_dist_m")
-    final = state.get("final_path_dist_to_goal_m")
-    if initial is None:
-        initial = float(_task_dict(task).get("optimal_distance_m") or 0.0)
+    initial = state.get("initial_dist")     # haversine, set in setup_state
+    final = state.get("dist_to_goal")        # haversine, updated each step
+    if initial is None or final is None:
+        # Fallback if the harness didn't seed the haversine fields: use the
+        # bake-time optimal_distance_m and assume the agent's final
+        # haversine equals their last-known dist_to_goal_m (best effort).
+        td = _task_dict(task)
+        initial = float(td.get("optimal_distance_m") or 0.0)
+        if final is None and "final_haversine_m" in state:
+            final = float(state["final_haversine_m"])
     if not initial or initial <= 0 or final is None:
         return 0.0
     val = 1.0 - float(final) / float(initial)

@@ -77,10 +77,12 @@ harbor run -p wanderbench-benchmark/tasks/<task-id> --agent <agent>
 ## Scoring
 
 ```
-path_progress = clip(1 − final_path_dist_m / initial_path_dist_m, 0, 1)
+path_progress = clip(1 − final_haversine_m / initial_haversine_m, 0, 1)
 ```
 
-Both distances are Dijkstra over the world graph (haversine edge weights) plus a last-mile haversine from the goal-nearest waypoint to the exact goal coordinate. 0 at the start pano, 1 at the goal-nearest waypoint. Off-path or beyond start, clipped to 0. The leaderboard ranks by mean `path_progress` across all 57 tasks.
+Distances are great-circle (haversine) between the agent's final pano coordinate and the goal coordinate, divided by the start-to-goal haversine. 0 at the start, 1 at the goal coordinate. The leaderboard ranks by mean `path_progress` across all 57 tasks.
+
+The agent can only walk on the world graph — that constraint is enforced by the simulator at action time, not by the scorer. The scorer only measures where the agent ended up. This was changed in v0.4 from a Dijkstra walking-distance metric: under the old rubric, agents that landed inside the 25 m goal radius on a road that was graph-disconnected from the goal road could score 0 despite arriving (three such cases documented in the v0.3 leaderboard). Haversine matches what the per-turn HUD shows the agent (`dist_to_goal_m`), so the metric the agent is optimizing against is now the same as the metric it is scored on.
 
 Per-task output:
 

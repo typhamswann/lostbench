@@ -6,7 +6,7 @@ verifiers-free. ``WanderbenchEnv`` / ``load_environment`` / ``path_progress``
 (chat-mode, used by ``wb run``) are imported lazily so the package loads — and
 the Harbor path runs — without the heavy ``verifiers`` dependency installed.
 """
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 
 def __getattr__(name):
